@@ -3,7 +3,7 @@
 // the owner's GitHub queue repo with Status "new". The Book Collection desktop program prepares new items (Google
 // lookup, your other copies, genre, eBay value, floors, rarity) and completes them. No keys live in this page.
 import { GRADES, FORMATS, EDITIONS, DETAILS, conditionBuild, quickCondition, takesJacket, buildDraft, isbnValid, suggestedFormat,
-  digits } from './rules.js';
+  printingText, digits } from './rules.js';
 import { lookupIsbn } from './lookup.js';
 import { GitHub } from './github.js';
 
@@ -196,13 +196,17 @@ function beep(ok) {
 // Quick details between scans: format, grade, jacket (+ book club / ex-library / signed). The box starts on the last
 // book's answers, so a matching pile is one tap per book; with "Ask after every scan" off, every scan gets the last
 // answers until they're changed. Never a guess: nothing is filled unless picked.
-let quickIsbn = '', quickOpen = false;
+let quickIsbn = '', quickOpen = false, formatTouched = false;
+const PER_BOOK = ['signed', 'firstEdition'];   // never carried to the next book (nor is printing)
 const quickLast = () => { try { return JSON.parse(store.get('quick', '{}')); } catch { return {}; } };
 const quickAsk = () => store.get('quickAsk', '1') === '1';
 
+const editionOf = (q) => (q.bookClub ? 'Book Club Edition' : q.firstEdition ? 'First Edition' : '');
+const printingOf = (q) => (q.printing === '' || q.printing == null ? '' : printingText(Number(q.printing)));
+
 function describe(q) {
   const cond = quickCondition(q.format || '', q.grade || '', q.jacket || null, q.exLibrary ? ['Ex-library'] : []);
-  const parts = [q.format, cond, q.bookClub && 'book club', q.signed && 'signed'].filter(Boolean);
+  const parts = [q.format, cond, editionOf(q).toLowerCase(), printingOf(q).toLowerCase(), q.signed && 'signed'].filter(Boolean);
   return parts.length ? parts.join(' · ') : 'ISBN only';
 }
 
@@ -224,17 +228,27 @@ function openQuick(isbn) {
   $('qAdd').textContent = isbn ? 'Add' : 'Use these';
   $('qBare').hidden = !isbn; $('qSkip').textContent = isbn ? 'Not this one' : 'Cancel';
   pick('qFormat', q.format || ''); pick('qGrade', q.grade || ''); pick('qJacket', q.jacket || '');
-  for (const b of $('qExtra').children) b.classList.toggle('on', b.dataset.v !== 'signed' && !!q[b.dataset.v]);
+  for (const b of $('qExtra').children) b.classList.toggle('on', !PER_BOOK.includes(b.dataset.v) && !!q[b.dataset.v]);
+  pick('qPrinting', ''); formatTouched = false; $('qFormatHint').hidden = true;
   $('qAsk').checked = quickAsk();
   showQuickJacket();
   $('qTitle').textContent = isbn ? `ISBN ${isbn}` : 'Details for every scan';
   $('quick').hidden = false;
   if (!isbn) return;
-  // Which book it is (quick Open Library look-up), so a mis-scan is easy to spot.
-  fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&jscmd=data&format=json`, { signal: AbortSignal.timeout?.(4000) })
+  // Which book it is (quick Open Library look-up), so a mis-scan is easy to spot; and its binding when recorded.
+  fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&jscmd=details&format=json`, { signal: AbortSignal.timeout?.(4000) })
     .then((r) => r.json()).then((j) => {
-      const b = j[`ISBN:${isbn}`];
-      if (b?.title && quickIsbn === isbn) $('qTitle').textContent = b.title + (b.authors?.[0]?.name ? ` - ${b.authors[0].name}` : '');
+      const b = j[`ISBN:${isbn}`]?.details;
+      if (!b || quickIsbn !== isbn) return;
+      if (b.title) $('qTitle').textContent = b.title + (b.authors?.[0]?.name ? ` - ${b.authors[0].name}` : '');
+      const f = suggestedFormat(b.physical_format);
+      if (!f || formatTouched) return;
+      const hint = (t) => { $('qFormatHint').textContent = t; $('qFormatHint').hidden = false; };
+      if ([...$('qFormat').children].some((c) => c.dataset.v === f)) { pick('qFormat', f); showQuickJacket(); hint(`Format from the book's record: ${b.physical_format}`); }
+      else if (f === 'Paperback') {
+        if (picked('qFormat') === 'Hardcover') { pick('qFormat', ''); showQuickJacket(); }
+        hint('The record says paperback: trade or mass market?');
+      } else hint(`The record says: ${b.physical_format}`);
     }).catch(() => {});
 }
 
@@ -249,7 +263,8 @@ function closeQuick(choice) {
   if (choice === 'add') {
     q = { format: picked('qFormat'), grade: picked('qGrade'), jacket: $('qJacket').hidden ? '' : picked('qJacket') };
     for (const b of $('qExtra').children) q[b.dataset.v] = b.classList.contains('on');
-    store.set('quick', JSON.stringify({ ...q, signed: false }));
+    q.printing = picked('qPrinting');
+    store.set('quick', JSON.stringify({ ...q, signed: false, firstEdition: false, printing: '' }));
   }
   if (isbn) queuePile(isbn, q);
   renderUsing();
@@ -273,12 +288,13 @@ function queuePile(d, q) {
   const condition = quickCondition(q.format || '', q.grade || '', q.jacket || null, q.exLibrary ? ['Ex-library'] : []);
   if (q.format) book.Format = q.format;
   if (condition) book.Condition = condition;
-  if (q.bookClub) book.Edition = 'Book Club Edition';
+  if (editionOf(q)) book.Edition = editionOf(q);
+  if (printingOf(q)) book.Printing = printingOf(q);
   if (q.signed) book.Signed = 'Yes';
   const sources = Object.fromEntries(Object.keys(book).map((k) => [k, 'owner']));
   const item = { Id: id, Captured: localStamp(), Device: 'web', Status: 'new', Book: book, Sources: sources,
     Notes: [q.format && condition
-      ? 'Scanned in a pile with quick details: check printing, edition and condition notes when you review it.'
+      ? `Scanned in a pile with quick details: check ${printingOf(q) ? '' : 'printing, '}edition and condition notes when you review it.`
       : 'Scanned in a pile: set format, condition and printing when you review it.'],
     Photo: '', ValueBasis: '', ValueWeak: false, BatchId: '' };
   // One at a time, in order, so the queue file never conflicts with itself.
@@ -362,11 +378,11 @@ $('isbn').addEventListener('keydown', (e) => { if (e.key === 'Enter') lookup($('
 $('scanBtn').addEventListener('click', startScan);
 $('pileBtn').addEventListener('click', startPile);
 $('stopScan').addEventListener('click', stopScan);
-for (const g of ['qFormat', 'qGrade', 'qJacket']) {
+for (const g of ['qFormat', 'qGrade', 'qJacket', 'qPrinting']) {
   $(g).addEventListener('click', (e) => {
     const b = e.target.closest('button'); if (!b) return;
     pick(g, b.classList.contains('on') ? '' : b.dataset.v);   // tap again to clear
-    if (g === 'qFormat') showQuickJacket();
+    if (g === 'qFormat') { formatTouched = true; showQuickJacket(); }
   });
 }
 $('qExtra').addEventListener('click', (e) => { e.target.closest('button')?.classList.toggle('on'); });

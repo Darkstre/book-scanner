@@ -71,6 +71,7 @@
           <button data-v="Trade Paperback">Trade pb</button>
           <button data-v="Mass Market Paperback">Mass market</button>
         </div>
+        <p id="qFormatHint" class="hint" hidden></p>
         <div class="chips" id="qGrade">
           <button data-v="Fine">Fine</button><button data-v="Near Fine">Near Fine</button><button data-v="Very Good">Very Good</button>
           <button data-v="Good">Good</button><button data-v="Fair">Fair</button><button data-v="Poor">Poor</button>
@@ -81,6 +82,13 @@
         </div>
         <div class="chips small" id="qExtra">
           <button data-v="bookClub">Book club</button><button data-v="exLibrary">Ex-library</button><button data-v="signed">Signed</button>
+          <button data-v="firstEdition">1st edition (stated)</button>
+        </div>
+        <div class="label">Printing: lowest number in the number line (optional)</div>
+        <div class="chips small" id="qPrinting">
+          <button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button><button data-v="4">4</button>
+          <button data-v="5">5</button><button data-v="6">6</button><button data-v="7">7</button><button data-v="8">8</button>
+          <button data-v="9">9</button><button data-v="10">10</button><button data-v="0">Later (no number)</button>
         </div>
         <label class="check"><input type="checkbox" id="qAsk" checked> Ask after every scan</label>
         <div class="row">
