@@ -197,6 +197,7 @@ function beep(ok) {
 // book's answers, so a matching pile is one tap per book; with "Ask after every scan" off, every scan gets the last
 // answers until they're changed. Never a guess: nothing is filled unless picked.
 let quickIsbn = '', quickOpen = false, formatTouched = false;
+const SIZE_TIP = 'Mass market = pocket size, about 4¼ × 7 in; trade = bigger, usually hardcover size.';
 const PER_BOOK = ['signed', 'firstEdition'];   // never carried to the next book (nor is printing)
 const quickLast = () => { try { return JSON.parse(store.get('quick', '{}')); } catch { return {}; } };
 const quickAsk = () => store.get('quickAsk', '1') === '1';
@@ -229,7 +230,7 @@ function openQuick(isbn) {
   $('qBare').hidden = !isbn; $('qSkip').textContent = isbn ? 'Not this one' : 'Cancel';
   pick('qFormat', q.format || ''); pick('qGrade', q.grade || ''); pick('qJacket', q.jacket || '');
   for (const b of $('qExtra').children) b.classList.toggle('on', !PER_BOOK.includes(b.dataset.v) && !!q[b.dataset.v]);
-  pick('qPrinting', ''); formatTouched = false; $('qFormatHint').hidden = true;
+  pick('qPrinting', ''); $('qPrintingOther').value = ''; formatTouched = false; $('qFormatHint').textContent = SIZE_TIP;
   $('qAsk').checked = quickAsk();
   showQuickJacket();
   $('qTitle').textContent = isbn ? `ISBN ${isbn}` : 'Details for every scan';
@@ -243,11 +244,11 @@ function openQuick(isbn) {
       if (b.title) $('qTitle').textContent = b.title + (b.authors?.[0]?.name ? ` - ${b.authors[0].name}` : '');
       const f = suggestedFormat(b.physical_format);
       if (!f || formatTouched) return;
-      const hint = (t) => { $('qFormatHint').textContent = t; $('qFormatHint').hidden = false; };
+      const hint = (t) => { $('qFormatHint').textContent = t; };
       if ([...$('qFormat').children].some((c) => c.dataset.v === f)) { pick('qFormat', f); showQuickJacket(); hint(`Format from the book's record: ${b.physical_format}`); }
       else if (f === 'Paperback') {
         if (picked('qFormat') === 'Hardcover') { pick('qFormat', ''); showQuickJacket(); }
-        hint('The record says paperback: trade or mass market?');
+        hint(`The record says paperback: trade or mass market? ${SIZE_TIP}`);
       } else hint(`The record says: ${b.physical_format}`);
     }).catch(() => {});
 }
@@ -263,7 +264,8 @@ function closeQuick(choice) {
   if (choice === 'add') {
     q = { format: picked('qFormat'), grade: picked('qGrade'), jacket: $('qJacket').hidden ? '' : picked('qJacket') };
     for (const b of $('qExtra').children) q[b.dataset.v] = b.classList.contains('on');
-    q.printing = picked('qPrinting');
+    const other = parseInt($('qPrintingOther').value, 10);
+    q.printing = other > 0 ? String(other) : picked('qPrinting');
     store.set('quick', JSON.stringify({ ...q, signed: false, firstEdition: false, printing: '' }));
   }
   if (isbn) queuePile(isbn, q);
@@ -383,9 +385,11 @@ for (const g of ['qFormat', 'qGrade', 'qJacket', 'qPrinting']) {
     const b = e.target.closest('button'); if (!b) return;
     pick(g, b.classList.contains('on') ? '' : b.dataset.v);   // tap again to clear
     if (g === 'qFormat') { formatTouched = true; showQuickJacket(); }
+    if (g === 'qPrinting') $('qPrintingOther').value = '';
   });
 }
 $('qExtra').addEventListener('click', (e) => { e.target.closest('button')?.classList.toggle('on'); });
+$('qPrintingOther').addEventListener('input', () => pick('qPrinting', ''));
 $('qAdd').addEventListener('click', () => closeQuick('add'));
 $('qBare').addEventListener('click', () => closeQuick('bare'));
 $('qSkip').addEventListener('click', () => closeQuick('skip'));

@@ -73,3 +73,4 @@ details summary { cursor: pointer; color: var(--gilt); margin-top: 10px; }
 #photoPreview { max-width: 100%; max-height: 220px; margin-top: 8px; border: 1px solid var(--gilt-dim); border-radius: 4px; }
 footer { text-align: center; font-size: 12px; color: var(--muted); padding: 0 16px 24px; }
 footer a { color: var(--gilt); }
+.sheet #qPrintingOther { margin-top: 8px; padding: 8px 10px; font-size: 15px; }
