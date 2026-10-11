@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Book Scanner</title>
+  <meta name="description" content="Scan a book's barcode and send it to your Book Collection queue on GitHub.">
+  <meta name="theme-color" content="#120c08">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Book Scanner">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="stylesheet" href="style.css">
+  <!-- Barcode reading for browsers without a built-in detector (iPhone Safari). Pinned version. -->
+  <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Book Scanner</h1>
+      <p class="sub" id="who"></p>
+    </div>
+    <button class="icon" id="openSettings" aria-label="Settings">⚙</button>
+  </header>
+
+  <main>
+    <!-- ===== Setup / settings ===== -->
+    <section id="settings" class="card" hidden>
+      <h2>Settings</h2>
+      <p class="hint">Books you scan go to the <b>queue</b> in your own GitHub account; the Book Collection program on your
+        PC finishes them. Everything here is stored only in this browser.</p>
+      <label>GitHub username<input id="sOwner" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
+      <label>GitHub token<input id="sToken" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…"></label>
+      <details class="hint">
+        <summary>How to make a token</summary>
+        <ol>
+          <li>github.com → your picture → Settings → Developer settings → Personal access tokens → <b>Fine-grained tokens</b> → Generate new token.</li>
+          <li>Repository access: <b>Only select repositories</b> → your queue repo (book-queue) and, optionally, your book repo (book-collection).</li>
+          <li>Permissions → Repository permissions → <b>Contents</b>: Read and write.</li>
+          <li>Generate, copy, paste above. It only reaches those repositories.</li>
+        </ol>
+      </details>
+      <label>Queue repository<input id="sQueue" autocapitalize="off" spellcheck="false" placeholder="book-queue"></label>
+      <label>Book repository (to warn about copies you already own; optional)<input id="sBooks" autocapitalize="off" spellcheck="false" placeholder="book-collection"></label>
+      <label>Google Books key (optional)<input id="sGoogle" type="password" autocomplete="off" spellcheck="false"></label>
+      <div class="row">
+        <button id="saveSettings" class="primary">Save</button>
+        <button id="testSettings">Test</button>
+        <button id="closeSettings">Close</button>
+      </div>
+      <p id="settingsMsg" class="msg"></p>
+    </section>
+
+    <!-- ===== Identify ===== -->
+    <section id="identify" class="card">
+      <button id="scanBtn" class="primary big">📷 Scan barcode</button>
+      <div id="reader" hidden></div>
+      <button id="stopScan" hidden>Stop camera</button>
+      <div class="row isbn">
+        <input id="isbn" inputmode="numeric" placeholder="or type the ISBN" autocomplete="off">
+        <button id="lookupBtn">Look up</button>
+      </div>
+      <details id="noIsbn">
+        <summary>No ISBN (older book)</summary>
+        <label>Title<input id="hTitle"></label>
+        <label>Author<input id="hAuthor"></label>
+      </details>
+      <div id="record" class="record" hidden></div>
+      <p id="notice" class="notice"></p>
+    </section>
+
+    <!-- ===== Owner's details ===== -->
+    <section id="details" class="card" hidden>
+      <h2>Your copy</h2>
+      <label>Format<select id="format"></select></label>
+
+      <div class="label">Book grade</div>
+      <div class="chips" id="grades"></div>
+
+      <div class="label">Dust jacket</div>
+      <div class="chips" id="jacket">
+        <button data-v="hasDJ">Has jacket</button>
+        <button data-v="protectedDJ">In protector</button>
+        <button data-v="noDJ">Missing</button>
+        <button data-v="" class="on">N/A</button>
+      </div>
+      <label id="jacketGradeRow" hidden>Jacket grade (optional)<select id="jacketGrade"></select></label>
+
+      <div class="label">Details</div>
+      <div class="chips small" id="flags"></div>
+      <input id="notes" placeholder="Anything else (e.g. slight shelf wear)">
+
+      <label class="check"><input type="checkbox" id="signed"> Signed</label>
+
+      <label>Printing: lowest number in the number line<select id="printing"></select></label>
+      <label>Edition statement<select id="edition"></select></label>
+
+      <label>Photo (optional: copyright page or cover)<input type="file" id="photo" accept="image/*" capture="environment"></label>
+      <img id="photoPreview" alt="" hidden>
+
+      <div class="preview"><span class="label">Condition</span> <code id="condPreview">-</code></div>
+
+      <label>Shop price (optional, for a quick verdict)<input id="price" inputmode="decimal" placeholder="$"></label>
+      <p id="verdict" class="verdict"></p>
+
+      <button id="queueBtn" class="primary big" disabled>Add to queue</button>
+      <button id="resetBtn">Start over</button>
+    </section>
+
+    <p id="status" class="status" role="status"></p>
+  </main>
+
+  <footer><a href="https://github.com/Darkstre/book-scanner">About</a> · Lookups: Open Library, Google Books</footer>
+</body>
+</html>

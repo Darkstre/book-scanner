@@ -1,0 +1,66 @@
+/* Library theme, matching the desktop and phone apps: warm blacks, antique gilt, parchment ink. */
+:root {
+  --bg: #0b0705; --panel: #17100b; --input: #100b08; --ink: #e9dcc0; --muted: #a8977a;
+  --gilt: #c9a35a; --gilt-bright: #e6c77f; --gilt-dim: #7a5f33; --candle: #f0b45a; --blood: #c0573f; --ok: #9fbf7a;
+  --display: "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif;
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+}
+header {
+  display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--gilt-dim); background: linear-gradient(#1c130c, #120c08);
+}
+h1 { margin: 0; font: 600 22px var(--display); color: var(--gilt-bright); }
+h2 { margin: 0 0 8px; font: 600 18px var(--display); color: var(--gilt-bright); }
+.sub { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+main { max-width: 560px; margin: 0 auto; padding: 12px 16px 24px; }
+.card { background: var(--panel); border: 1px solid var(--gilt-dim); border-radius: 6px; padding: 14px; margin-bottom: 12px; }
+label { display: block; margin: 10px 0 0; font-size: 13px; color: var(--gilt); font-family: var(--display); }
+label input, label select { margin-top: 4px; }
+.label { margin: 12px 0 6px; font-size: 13px; color: var(--gilt); font-family: var(--display); }
+input, select {
+  width: 100%; font-size: 16px; color: var(--ink); background: var(--input); border: 1px solid var(--gilt-dim);
+  border-radius: 4px; padding: 10px; font-family: inherit;
+}
+input:focus, select:focus { outline: none; border-color: var(--gilt); }
+button {
+  font: 15px var(--display); color: var(--gilt-bright); background: linear-gradient(#2a1d12, #140d08);
+  border: 1px solid var(--gilt-dim); border-radius: 4px; padding: 10px 14px; cursor: pointer; margin-top: 8px;
+}
+button:active { background: #0e0906; }
+button:disabled { opacity: .45; }
+button.primary { border-color: var(--gilt); font-weight: 600; }
+button.big { width: 100%; padding: 14px; font-size: 17px; }
+button.icon { margin: 0; font-size: 20px; padding: 6px 10px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row.isbn input { flex: 1; min-width: 0; margin-top: 8px; font-family: ui-monospace, Consolas, monospace; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips button { margin: 0; padding: 8px 12px; font-size: 14px; }
+.chips.small button { font-size: 13px; padding: 6px 10px; }
+.chips button.on { border-color: var(--candle); color: var(--bg); background: var(--gilt); }
+.check { display: flex; align-items: center; gap: 8px; color: var(--ink); font-family: inherit; font-size: 15px; margin-top: 14px; }
+.check input { width: 20px; height: 20px; margin: 0; }
+#notes { margin-top: 8px; }
+#reader { margin-top: 10px; border: 1px solid var(--gilt-dim); border-radius: 4px; overflow: hidden; }
+#reader video { width: 100% !important; }
+.record { margin-top: 12px; padding: 10px; border-left: 2px solid var(--gilt); background: #120c08; }
+.record .t { font: 600 17px var(--display); color: var(--gilt-bright); }
+.record .m { font-size: 13px; color: var(--muted); }
+.notice { color: var(--candle); font-size: 14px; margin: 8px 0 0; white-space: pre-line; }
+.preview { margin-top: 12px; font-size: 13px; }
+.preview code { color: var(--ink); font-size: 13px; word-break: break-word; }
+.verdict { font: 600 16px var(--display); color: var(--gilt-bright); margin: 8px 0 0; }
+.hint { font-size: 13px; color: var(--muted); }
+.hint ol { padding-left: 18px; }
+details summary { cursor: pointer; color: var(--gilt); margin-top: 10px; }
+.msg { font-size: 14px; color: var(--candle); min-height: 1em; }
+.status { text-align: center; min-height: 1.4em; color: var(--candle); }
+.status.ok { color: var(--ok); }
+#photoPreview { max-width: 100%; max-height: 220px; margin-top: 8px; border: 1px solid var(--gilt-dim); border-radius: 4px; }
+footer { text-align: center; font-size: 12px; color: var(--muted); padding: 0 16px 24px; }
+footer a { color: var(--gilt); }
