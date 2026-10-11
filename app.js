@@ -2,7 +2,8 @@
 // add what only the owner can see (format, grade, jacket, printing, edition, photo), and append it to queue.jsonl in
 // the owner's GitHub queue repo with Status "new". The Book Collection desktop program prepares new items (Google
 // lookup, your other copies, genre, eBay value, floors, rarity) and completes them. No keys live in this page.
-import { GRADES, FORMATS, EDITIONS, DETAILS, conditionBuild, buildDraft, isbnValid, suggestedFormat, digits } from './rules.js';
+import { GRADES, FORMATS, EDITIONS, DETAILS, conditionBuild, quickCondition, takesJacket, buildDraft, isbnValid, suggestedFormat,
+  digits } from './rules.js';
 import { lookupIsbn } from './lookup.js';
 import { GitHub } from './github.js';
 
@@ -192,18 +193,93 @@ function beep(ok) {
   } catch { /* no sound: scanning still works */ }
 }
 
+// Quick details between scans: format, grade, jacket (+ book club / ex-library / signed). The box starts on the last
+// book's answers, so a matching pile is one tap per book; with "Ask after every scan" off, every scan gets the last
+// answers until they're changed. Never a guess: nothing is filled unless picked.
+let quickIsbn = '', quickOpen = false;
+const quickLast = () => { try { return JSON.parse(store.get('quick', '{}')); } catch { return {}; } };
+const quickAsk = () => store.get('quickAsk', '1') === '1';
+
+function describe(q) {
+  const cond = quickCondition(q.format || '', q.grade || '', q.jacket || null, q.exLibrary ? ['Ex-library'] : []);
+  const parts = [q.format, cond, q.bookClub && 'book club', q.signed && 'signed'].filter(Boolean);
+  return parts.length ? parts.join(' · ') : 'ISBN only';
+}
+
+function renderUsing() {
+  $('pileUsing').hidden = !pile;
+  $('pileUsing').textContent = quickAsk() ? `Asks after every scan (starts on: ${describe(quickLast())})`
+    : `Every scan gets: ${describe(quickLast())}`;
+  $('qChange').hidden = !pile;
+}
+
+function pick(groupId, value) { [...$(groupId).children].forEach((b) => b.classList.toggle('on', b.dataset.v === value)); }
+function picked(groupId) { return [...$(groupId).children].find((b) => b.classList.contains('on'))?.dataset.v || ''; }
+function showQuickJacket() { const f = picked('qFormat'); $('qJacket').hidden = !!f && !takesJacket(f); }
+
+/** isbn = null: just change the details used for every scan. */
+function openQuick(isbn) {
+  const q = quickLast();
+  quickIsbn = isbn || ''; quickOpen = true;
+  $('qAdd').textContent = isbn ? 'Add' : 'Use these';
+  $('qBare').hidden = !isbn; $('qSkip').textContent = isbn ? 'Not this one' : 'Cancel';
+  pick('qFormat', q.format || ''); pick('qGrade', q.grade || ''); pick('qJacket', q.jacket || '');
+  for (const b of $('qExtra').children) b.classList.toggle('on', b.dataset.v !== 'signed' && !!q[b.dataset.v]);
+  $('qAsk').checked = quickAsk();
+  showQuickJacket();
+  $('qTitle').textContent = isbn ? `ISBN ${isbn}` : 'Details for every scan';
+  $('quick').hidden = false;
+  if (!isbn) return;
+  // Which book it is (quick Open Library look-up), so a mis-scan is easy to spot.
+  fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&jscmd=data&format=json`, { signal: AbortSignal.timeout?.(4000) })
+    .then((r) => r.json()).then((j) => {
+      const b = j[`ISBN:${isbn}`];
+      if (b?.title && quickIsbn === isbn) $('qTitle').textContent = b.title + (b.authors?.[0]?.name ? ` - ${b.authors[0].name}` : '');
+    }).catch(() => {});
+}
+
+function closeQuick(choice) {
+  const isbn = quickIsbn; quickIsbn = ''; quickOpen = false;
+  $('quick').hidden = true;
+  if (!isbn && choice === 'skip') { renderUsing(); return; }   // cancelled the change
+  store.set('quickAsk', $('qAsk').checked ? '1' : '0');
+  if (isbn) { pileLast = isbn; pileLastAt = Date.now(); }   // the camera is still on this book: ignore it for a moment
+  if (choice === 'skip') { renderUsing(); return; }
+  let q = {};
+  if (choice === 'add') {
+    q = { format: picked('qFormat'), grade: picked('qGrade'), jacket: $('qJacket').hidden ? '' : picked('qJacket') };
+    for (const b of $('qExtra').children) q[b.dataset.v] = b.classList.contains('on');
+    store.set('quick', JSON.stringify({ ...q, signed: false }));
+  }
+  if (isbn) queuePile(isbn, q);
+  renderUsing();
+}
+
 function pileScan(text) {
+  if (quickOpen) return;   // the details box is open
   const d = digits(text);
   if (!/^97[89]\d{10}$/.test(d)) { beep(false); return; }
   const now = Date.now();
   if (d === pileLast && now - pileLastAt < 4000) return;   // still pointing at the same book
   pileLast = d; pileLastAt = now;
   beep(true);
+  if (quickAsk()) openQuick(d); else queuePile(d, quickLast());
+}
+
+function queuePile(d, q) {
   const s = settings();
   const id = Array.from(crypto.getRandomValues(new Uint8Array(5)), (b) => b.toString(16).padStart(2, '0')).join('');
-  const item = { Id: id, Captured: localStamp(), Device: 'web', Status: 'new',
-    Book: { ISBN: d, Status: 'Own' }, Sources: { ISBN: 'owner', Status: 'owner' },
-    Notes: ['Scanned in a pile: set format, condition and printing when you review it.'],
+  const book = { ISBN: d, Status: 'Own' };
+  const condition = quickCondition(q.format || '', q.grade || '', q.jacket || null, q.exLibrary ? ['Ex-library'] : []);
+  if (q.format) book.Format = q.format;
+  if (condition) book.Condition = condition;
+  if (q.bookClub) book.Edition = 'Book Club Edition';
+  if (q.signed) book.Signed = 'Yes';
+  const sources = Object.fromEntries(Object.keys(book).map((k) => [k, 'owner']));
+  const item = { Id: id, Captured: localStamp(), Device: 'web', Status: 'new', Book: book, Sources: sources,
+    Notes: [q.format && condition
+      ? 'Scanned in a pile with quick details: check printing, edition and condition notes when you review it.'
+      : 'Scanned in a pile: set format, condition and printing when you review it.'],
     Photo: '', ValueBasis: '', ValueWeak: false, BatchId: '' };
   // One at a time, in order, so the queue file never conflicts with itself.
   sendChain = sendChain.then(() => new GitHub(s.owner, s.token).appendLine(s.queue, 'queue.jsonl', JSON.stringify(item), `Queued (web pile): ${d}`))
@@ -216,6 +292,7 @@ async function startPile() {
   if (!s.owner || !s.token) { showSettings(true); status('Set your GitHub username and token first.'); return; }
   pile = true; pileSent = 0; pileLast = '';
   $('pileInfo').hidden = false; $('pileCount').hidden = false; $('pileCount').textContent = '0 books queued';
+  renderUsing();
   beep(true);   // unlocks sound on iPhone (it must start from a tap)
   await startScan();
 }
@@ -265,7 +342,8 @@ async function stopScan() {
   if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
   $('reader').hidden = true; $('reader').replaceChildren(); $('stopScan').hidden = true; $('scanBtn').hidden = false; $('pileBtn').hidden = false;
   if (pile) {
-    pile = false; $('pileInfo').hidden = true;
+    if (quickOpen) closeQuick(quickIsbn ? 'add' : 'skip');   // stopped with the box open: keep that book
+    pile = false; $('pileInfo').hidden = true; $('pileUsing').hidden = true; $('qChange').hidden = true;
     await sendChain;
     status(`Pile done: ${pileSent} book(s) in the queue. Open Queue on the PC to finish them.`, true);
   }
@@ -284,6 +362,19 @@ $('isbn').addEventListener('keydown', (e) => { if (e.key === 'Enter') lookup($('
 $('scanBtn').addEventListener('click', startScan);
 $('pileBtn').addEventListener('click', startPile);
 $('stopScan').addEventListener('click', stopScan);
+for (const g of ['qFormat', 'qGrade', 'qJacket']) {
+  $(g).addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    pick(g, b.classList.contains('on') ? '' : b.dataset.v);   // tap again to clear
+    if (g === 'qFormat') showQuickJacket();
+  });
+}
+$('qExtra').addEventListener('click', (e) => { e.target.closest('button')?.classList.toggle('on'); });
+$('qAdd').addEventListener('click', () => closeQuick('add'));
+$('qBare').addEventListener('click', () => closeQuick('bare'));
+$('qSkip').addEventListener('click', () => closeQuick('skip'));
+$('qChange').addEventListener('click', () => openQuick(null));
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && quickOpen) closeQuick('skip'); });   // Esc = Not this one / Cancel
 $('photo').addEventListener('change', async () => {
   const f = $('photo').files[0]; if (!f) return;
   photoBlob = await shrink(f);

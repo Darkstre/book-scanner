@@ -63,6 +63,28 @@ export function conditionBuild(grade, jacketGrade, djToken, detail) {
   return d ? `${left} | ${d}` : left;
 }
 
+/** Formats that take a dust jacket (hardcovers; not slipcased, leather, boxed or paperback). */
+export function takesJacket(format) {
+  const f = (format || '').toLowerCase();
+  if (/slipcase|leather|boxed|ledger|paperback|softcover/.test(f)) return false;
+  return /hard(cover|back)|dust jacket/.test(f);
+}
+
+/**
+ * The condition from the quick details asked between pile scans (same rule as the desktop and Android apps):
+ * jacket is hasDJ / protectedDJ / noDJ, or 'jacketless' for a hardcover issued without one; it only counts for formats
+ * that take a jacket (or when no format was given). No grade → '' (left for the review).
+ */
+export function quickCondition(format, grade, jacket, details = []) {
+  if (!grade) return '';
+  const parts = details.filter((d) => d && d.trim()).map((d) => d.trim().toLowerCase());
+  let token = null;
+  if (jacket && (!format || takesJacket(format))) {
+    if (jacket === 'jacketless') parts.unshift('issued jacketless'); else token = jacket;
+  }
+  return conditionBuild(grade, null, token, parts.join('; '));
+}
+
 // ---------- Printing ----------
 
 const ORDINALS = ['', 'First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth', 'Ninth', 'Tenth',

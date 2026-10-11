@@ -6,6 +6,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -43,6 +44,13 @@ button.icon { margin: 0; font-size: 20px; padding: 6px 10px; }
 .chips button { margin: 0; padding: 8px 12px; font-size: 14px; }
 .chips.small button { font-size: 13px; padding: 6px 10px; }
 .chips button.on { border-color: var(--candle); color: var(--bg); background: var(--gilt); }
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; max-width: 560px; margin: 0 auto;
+  background: var(--panel); border: 1px solid var(--gilt); border-bottom: 0; border-radius: 10px 10px 0 0;
+  padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); box-shadow: 0 -8px 24px #000a;
+}
+.sheet .chips { margin-top: 8px; }
+.sheet .qt { font: 600 16px var(--display); color: var(--gilt-bright); }
 .check { display: flex; align-items: center; gap: 8px; color: var(--ink); font-family: inherit; font-size: 15px; margin-top: 14px; }
 .check input { width: 20px; height: 20px; margin: 0; }
 #notes { margin-top: 8px; }
