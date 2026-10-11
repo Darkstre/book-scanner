@@ -31,22 +31,20 @@
     <!-- ===== Setup / settings ===== -->
     <section id="settings" class="card" hidden>
       <h2>Settings</h2>
-      <p class="hint">Books you scan go to the <b>queue</b> in your own GitHub account; the Book Collection program on your
-        PC finishes them. Everything here is stored only in this browser.</p>
+      <p class="hint">Books you scan go to the <b>queue</b> in your own GitHub account. The Book Collection program on
+        your PC does the rest (details, values, saving to your collection). Everything here is stored only in this browser.</p>
       <label>GitHub username<input id="sOwner" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
       <label>GitHub token<input id="sToken" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…"></label>
       <details class="hint">
         <summary>How to make a token</summary>
         <ol>
           <li>github.com → your picture → Settings → Developer settings → Personal access tokens → <b>Fine-grained tokens</b> → Generate new token.</li>
-          <li>Repository access: <b>Only select repositories</b> → your queue repo (book-queue) and, optionally, your book repo (book-collection).</li>
+          <li>Repository access: <b>Only select repositories</b> → your queue repo (book-queue).</li>
           <li>Permissions → Repository permissions → <b>Contents</b>: Read and write.</li>
           <li>Generate, copy, paste above. It only reaches those repositories.</li>
         </ol>
       </details>
       <label>Queue repository<input id="sQueue" autocapitalize="off" spellcheck="false" placeholder="book-queue"></label>
-      <label>Book repository (to warn about copies you already own; optional)<input id="sBooks" autocapitalize="off" spellcheck="false" placeholder="book-collection"></label>
-      <label>Google Books key (optional)<input id="sGoogle" type="password" autocomplete="off" spellcheck="false"></label>
       <div class="row">
         <button id="saveSettings" class="primary">Save</button>
         <button id="testSettings">Test</button>
@@ -70,7 +68,6 @@
         <label>Author<input id="hAuthor"></label>
       </details>
       <div id="record" class="record" hidden></div>
-      <p id="notice" class="notice"></p>
     </section>
 
     <!-- ===== Owner's details ===== -->
@@ -104,9 +101,6 @@
 
       <div class="preview"><span class="label">Condition</span> <code id="condPreview">-</code></div>
 
-      <label>Shop price (optional, for a quick verdict)<input id="price" inputmode="decimal" placeholder="$"></label>
-      <p id="verdict" class="verdict"></p>
-
       <button id="queueBtn" class="primary big" disabled>Add to queue</button>
       <button id="resetBtn">Start over</button>
     </section>
@@ -114,6 +108,6 @@
     <p id="status" class="status" role="status"></p>
   </main>
 
-  <footer><a href="https://github.com/Darkstre/book-scanner">About</a> · Lookups: Open Library, Google Books</footer>
+  <footer><a href="https://github.com/Darkstre/book-scanner">About</a> · Lookups: Open Library · Finished by Book Collection on your PC</footer>
 </body>
 </html>

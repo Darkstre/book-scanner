@@ -1,4 +1,4 @@
-// Cataloguing rules shared with the desktop and Android apps (ported from FieldEngine / ConditionStandard / Isbn /
+// The capture rules shared with the desktop and Android apps (ported from ConditionStandard / Isbn / FieldEngine /
 // IsbnLookup). Tested against ../shared-tests/rules-cases.json by tests/rules.test.mjs, like both apps' test suites.
 
 // ---------- ISBN ----------
@@ -78,44 +78,6 @@ export function printingText(n) {
   return `${n}${suffix} Printing`;
 }
 
-// ---------- Genre from subject headings (first match wins; same order as the desktop) ----------
-
-const SUBJECT_MAP = [
-  [/\btrue crime\b/, 'True Crime'],
-  [/\bscience fiction\b|\bsci-fi\b/, 'Science Fiction'],
-  [/\bhorror\b|\bghost stories\b|\bvampires?\b/, 'Horror'],
-  [/\bfantasy\b|\bmagic.*fiction\b|\bwizards\b|\bdragons\b/, 'Fantasy'],
-  [/\bthriller|\bsuspense\b|\bespionage\b|\bspy stories\b/, 'Thriller'],
-  [/\bmystery|\bdetective|\bcrime fiction\b|\bpolice procedural/, 'Mystery & Crime'],
-  [/\bhistorical fiction\b|\bfiction, historical\b|\bsea stories\b/, 'Historical Fiction'],
-  [/\bwestern( stories)?\b/, 'Western'],
-  [/\byoung adult\b/, 'Young Adult'],
-  [/\bjuvenile\b|\bchildren'?s\b/, "Children's"],
-  [/\bbiograph|\bautobiograph|\bmemoir/, 'Biography & Memoir'],
-  [/\boccult|\bwitchcraft\b|\bmagic\b|\btarot\b|\bastrology\b|\bparapsychology\b|\bspiritualism\b/, 'Occult & Esoteric'],
-  [/\bmythology\b|\bfolklore\b|\blegends\b/, 'Mythology & Folklore'],
-  [/\bpoetry\b|\bpoems\b/, 'Poetry'],
-  [/\bdrama\b|\bplays\b/, 'Drama'],
-  [/\breligion\b|\bchristian|\bbible\b|\btheology\b|\bspiritual/, 'Religion & Spirituality'],
-  [/\bphilosophy\b/, 'Philosophy'],
-  [/\bpsychology\b/, 'Psychology'],
-  [/\bmedicine\b|\bmedical\b|\bhealth\b/, 'Medicine & Health'],
-  [/\bastronomy\b|\bscience\b|\bphysics\b|\bbiology\b|\bevolution\b/, 'Science'],
-  [/\bhistory\b/, 'History'],
-  [/\bart\b|\billustration\b/, 'Art & Illustration'],
-  [/\bgames?\b|\bgaming\b|\brole playing\b/, 'Games & Gaming'],
-  [/\bbooks and reading\b|\bbibliograph|\bbook collecting\b/, 'Books & Bibliophilia'],
-  [/\bclassic/, 'Classic Literature'],
-  [/\bfiction\b/, 'Fiction'],
-];
-
-export function genreFromSubjects(subjects) {
-  const text = (subjects || []).join(' | ').toLowerCase();
-  if (!text) return null;
-  const hit = SUBJECT_MAP.find(([re]) => re.test(text));
-  return hit ? hit[1] : null;
-}
-
 // ---------- Record helpers ----------
 
 const SMALL = new Set(['a', 'an', 'the', 'and', 'but', 'or', 'nor', 'of', 'in', 'on', 'at', 'to', 'for', 'by', 'from', 'with', 'as', 'vs']);
@@ -167,21 +129,14 @@ export function suggestedFormat(physical) {
   return '';
 }
 
-// ---------- Value floors and "Common" rarity (only the confident, scripted cases; the rest is research) ----------
-
-function floorByGrade(grade, top, good, fair, poor) {
-  if (grade.startsWith('As New') || grade.startsWith('Fine')) return top;
-  if (grade.startsWith('Near Fine') || grade.startsWith('Very Good')) return good;
-  if (grade.startsWith('Good')) return fair;
-  return poor;
-}
+// ---------- The capture sent to the desktop ----------
 
 /**
- * Builds the queue item's book fields, sources and notes from the owner's input and the ISBN record, like the
- * desktop FieldEngine (without eBay, which needs a server, and without Claude, which runs on the desktop).
+ * The owner's details plus what the free lookup confirmed. Everything else (Google, your other copies, genre, eBay
+ * value, floors, rarity, research) is done by the desktop when it prepares the queue (FieldEngine.PrepareAsync).
  */
 export function buildDraft(record, input) {
-  const book = {}, sources = {}, notes = [];
+  const book = {}, sources = {};
   const set = (field, value, source) => {
     if (!value || !String(value).trim()) return;
     book[field] = String(value).trim();
@@ -193,8 +148,6 @@ export function buildDraft(record, input) {
   set('Edition', input.edition, 'owner');
   set('Printing', printingText(input.printing), 'owner');
   book.Status = 'Own'; sources.Status = 'owner';
-  if (input.notes && input.notes.trim()) notes.push('Owner: ' + input.notes.trim());
-
   if (record && record.title) {
     set('Title', record.fullTitle, 'record');
     set('Author', record.authors.join(' & '), 'record');
@@ -202,35 +155,10 @@ export function buildDraft(record, input) {
     set('Publisher', record.place && record.publisher ? `${record.publisher}, ${record.place}` : record.publisher, 'record');
     set('Pages', record.pages, 'record');
     set('Series', record.series, 'record');
-    if (!book.Edition && record.editionName && !/^\d/.test(record.editionName)) set('Edition', record.editionName, 'record');
-    const g = genreFromSubjects(record.subjects);
-    if (g) set('Genre', g, 'script');
   } else {
     set('Title', input.title, 'owner');
     set('Author', input.author, 'owner');
   }
   if (input.isbn) set('ISBN', input.isbn, record && record.title ? 'record' : 'owner');
-
-  const grade = (book.Condition || '').split('|')[0].split('/')[0].trim();
-  const text = `${book.Edition || ''} ${book.Format || ''} ${book.Condition || ''}`;
-  const bookClub = /book club/i.test(`${book.Edition || ''} ${book.Condition || ''}`);
-  const special = !!book.Signed || /limited|numbered|signed|slipcase|leather|easton|franklin|folio|deluxe|proof|advance/i.test(text);
-  const year = parseInt(book.Year || '0', 10);
-  const modernMassMarket = /^Mass Market/i.test(book.Format || '') && year >= 1980;
-  let valueBasis = '', valueWeak = false;
-  if (bookClub && !special) {
-    set('Value', '$' + floorByGrade(grade, 8, 6, 4, 3), 'script');
-    valueBasis = 'book-club edition floor ($3-8 by condition)';
-  } else if (modernMassMarket && !special) {
-    set('Value', '$' + floorByGrade(grade, 6, 5, 4, 3), 'script');
-    valueBasis = 'mass-market paperback floor ($3-6 by condition)';
-    valueWeak = true;
-  }
-  if (!special) {
-    const reason = bookClub ? 'book club edition, widely available'
-      : modernMassMarket ? 'mass-market paperback, large print runs'
-      : record && record.forSale ? 'still in print' : null;
-    if (reason) set('Rarity', 'Common; ' + reason, 'script');
-  }
-  return { book, sources, notes, valueBasis, valueWeak };
+  return { book, sources };
 }
