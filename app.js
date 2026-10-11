@@ -175,9 +175,55 @@ function reset(keepStatus = false) {
 
 let scanner = null, stream = null, scanning = false;
 
+// ---------- pile mode: every scan goes straight to the queue ----------
+
+let pile = false, pileSent = 0, pileLast = '', pileLastAt = 0, sendChain = Promise.resolve();
+let audio = null;
+
+function beep(ok) {
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.frequency.value = ok ? 1760 : 220;
+    g.gain.setValueAtTime(0.25, audio.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + (ok ? 0.09 : 0.3));
+    o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime + (ok ? 0.1 : 0.3));
+    if (navigator.vibrate) navigator.vibrate(ok ? 40 : [80, 60, 80]);
+  } catch { /* no sound: scanning still works */ }
+}
+
+function pileScan(text) {
+  const d = digits(text);
+  if (!/^97[89]\d{10}$/.test(d)) { beep(false); return; }
+  const now = Date.now();
+  if (d === pileLast && now - pileLastAt < 4000) return;   // still pointing at the same book
+  pileLast = d; pileLastAt = now;
+  beep(true);
+  const s = settings();
+  const id = Array.from(crypto.getRandomValues(new Uint8Array(5)), (b) => b.toString(16).padStart(2, '0')).join('');
+  const item = { Id: id, Captured: localStamp(), Device: 'web', Status: 'new',
+    Book: { ISBN: d, Status: 'Own' }, Sources: { ISBN: 'owner', Status: 'owner' },
+    Notes: ['Scanned in a pile: set format, condition and printing when you review it.'],
+    Photo: '', ValueBasis: '', ValueWeak: false, BatchId: '' };
+  // One at a time, in order, so the queue file never conflicts with itself.
+  sendChain = sendChain.then(() => new GitHub(s.owner, s.token).appendLine(s.queue, 'queue.jsonl', JSON.stringify(item), `Queued (web pile): ${d}`))
+    .then(() => { pileSent++; $('pileCount').textContent = `${pileSent} book(s) queued`; })
+    .catch((e) => { beep(false); status(`Couldn't queue ${d}: ${e.message}`); });
+}
+
+async function startPile() {
+  const s = settings();
+  if (!s.owner || !s.token) { showSettings(true); status('Set your GitHub username and token first.'); return; }
+  pile = true; pileSent = 0; pileLast = '';
+  $('pileInfo').hidden = false; $('pileCount').hidden = false; $('pileCount').textContent = '0 books queued';
+  beep(true);   // unlocks sound on iPhone (it must start from a tap)
+  await startScan();
+}
+
 async function startScan() {
-  $('reader').hidden = false; $('stopScan').hidden = false; $('scanBtn').hidden = true;
+  $('reader').hidden = false; $('stopScan').hidden = false; $('scanBtn').hidden = true; $('pileBtn').hidden = true;
   const done = async (text) => {
+    if (pile) { pileScan(text); return; }
     await stopScan();
     const d = digits(text);
     if (/^97[89]\d{10}$/.test(d)) lookup(d); else status('That barcode is not an ISBN (it should start 978 or 979).');
@@ -195,7 +241,8 @@ async function startScan() {
         if (!scanning) return;
         const codes = await det.detect(video).catch(() => []);
         const hit = codes.find((c) => /^97[89]/.test(c.rawValue));
-        if (hit) done(hit.rawValue); else requestAnimationFrame(tick);
+        if (hit) await done(hit.rawValue);
+        if (scanning) requestAnimationFrame(tick);
       };
       tick();
     } else {
@@ -216,7 +263,12 @@ async function stopScan() {
   scanning = false;
   if (scanner) { try { await scanner.stop(); } catch { /* already stopped */ } scanner = null; }
   if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
-  $('reader').hidden = true; $('reader').replaceChildren(); $('stopScan').hidden = true; $('scanBtn').hidden = false;
+  $('reader').hidden = true; $('reader').replaceChildren(); $('stopScan').hidden = true; $('scanBtn').hidden = false; $('pileBtn').hidden = false;
+  if (pile) {
+    pile = false; $('pileInfo').hidden = true;
+    await sendChain;
+    status(`Pile done: ${pileSent} book(s) in the queue. Open Queue on the PC to finish them.`, true);
+  }
 }
 
 // ---------- wire up ----------
@@ -230,6 +282,7 @@ for (const id of ['notes', 'hTitle', 'hAuthor', 'isbn']) $(id).addEventListener(
 $('lookupBtn').addEventListener('click', () => lookup($('isbn').value));
 $('isbn').addEventListener('keydown', (e) => { if (e.key === 'Enter') lookup($('isbn').value); });
 $('scanBtn').addEventListener('click', startScan);
+$('pileBtn').addEventListener('click', startPile);
 $('stopScan').addEventListener('click', stopScan);
 $('photo').addEventListener('change', async () => {
   const f = $('photo').files[0]; if (!f) return;
