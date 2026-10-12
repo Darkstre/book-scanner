@@ -57,6 +57,12 @@ button.icon { margin: 0; font-size: 20px; padding: 6px 10px; }
 #notes { margin-top: 8px; }
 #reader { margin-top: 10px; border: 1px solid var(--gilt-dim); border-radius: 4px; overflow: hidden; }
 #reader video { width: 100% !important; }
+#reader { position: relative; }
+.ocrband {
+  position: absolute; left: 6%; width: 88%; top: 40%; height: 20%; z-index: 5; pointer-events: none;
+  border: 2px dashed var(--candle); border-radius: 4px; box-shadow: 0 0 0 999px #0007;
+}
+#ocrHint { margin-top: 4px; }
 .record { margin-top: 12px; padding: 10px; border-left: 2px solid var(--gilt); background: #120c08; }
 .record .t { font: 600 17px var(--display); color: var(--gilt-bright); }
 .record .m { font-size: 13px; color: var(--muted); }

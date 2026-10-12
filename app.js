@@ -5,6 +5,7 @@
 import { GRADES, FORMATS, EDITIONS, DETAILS, conditionBuild, quickCondition, takesJacket, buildDraft, isbnValid, suggestedFormat,
   printingText, digits, isNewsstandUpc, isbnFromPrintedText } from './rules.js';
 import { lookupIsbn } from './lookup.js';
+import { readPrintedIsbn } from './ocr.js';
 import { GitHub } from './github.js';
 
 const $ = (id) => document.getElementById(id);
@@ -181,10 +182,52 @@ function readIsbn(v) {
 
 /** A newsstand barcode was scanned (single scan): explain, and get the box ready for Scan Text or typing. */
 function newsstand() {
-  status("Newsstand barcode (mass market paperback): it holds the price, not the ISBN. The ISBN is printed near it - tap the ISBN box and choose Scan Text (iPhone), or type it.");
+  status('Newsstand barcode (mass market paperback): it holds the price, not the ISBN. Reading the ISBN printed near it…');
   $('isbn').value = '';
-  $('isbn').inputMode = 'text';   // the full keyboard, where iPhone offers Scan Text
-  $('isbn').focus();
+  $('isbn').inputMode = 'text';   // the full keyboard (iPhone also offers Scan Text there)
+  readPrinted('box');
+}
+
+// ---------- the printed ISBN, read by the camera (ocr.js) ----------
+
+let ocrActive = false, ocrStream = null;
+
+/** Reads the printed "ISBN …" line; target 'box' (look it up) or 'quick' (the pile's details box). */
+async function readPrinted(target) {
+  if (ocrActive) return;
+  ocrActive = true;
+  let video = $('reader').querySelector('video');
+  try {
+    if (!video) {   // no camera running: open one just for this
+      $('reader').hidden = false; $('stopScan').hidden = false;
+      for (const id of ['scanBtn', 'pileBtn', 'ocrBtn']) $(id).hidden = true;
+      video = document.createElement('video'); video.setAttribute('playsinline', ''); video.muted = true;
+      $('reader').replaceChildren(video);
+      ocrStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } });
+      video.srcObject = ocrStream; await video.play();
+    }
+  } catch (e) {
+    ocrActive = false; await stopScan();
+    status(e.name === 'NotAllowedError' ? 'Camera permission was refused - allow it in the browser settings, or type the ISBN.' : `Camera: ${e.message}`);
+    return;
+  }
+  if (target === 'quick') $('quick').hidden = true;   // the box would cover the camera
+  const guide = document.createElement('div'); guide.className = 'ocrband';
+  $('reader').append(guide);
+  window.scrollTo({ top: $('reader').offsetTop - 60, behavior: 'smooth' });
+  let isbn = null;
+  try { isbn = await readPrintedIsbn(video, (t) => status(t), () => !ocrActive); }
+  catch (e) { status(e.message); }
+  guide.remove();
+  const wasActive = ocrActive; ocrActive = false;
+  if (target === 'quick') {
+    if (quickOpen) $('quick').hidden = false;
+    if (isbn) { beep(true); $('qIsbn').value = isbn; $('qIsbn').dispatchEvent(new Event('input')); status(`Read ISBN ${isbn}.`); }
+    if (ocrStream) await stopScan();
+    return;
+  }
+  if (isbn) { beep(true); await stopScan(); lookup(isbn); }
+  else if (wasActive) { await stopScan(); }
 }
 
 // ---------- barcode ----------
@@ -308,6 +351,7 @@ function pileScan(text) {
     pileLast = d; pileLastAt = Date.now();
     beep(true);
     openQuick('', true);   // ask for the ISBN printed near the barcode
+    readPrinted('quick');
     return;
   }
   if (!/^97[89]\d{10}$/.test(d)) { beep(false); return; }
@@ -351,13 +395,14 @@ async function startPile() {
 }
 
 async function startScan() {
-  $('reader').hidden = false; $('stopScan').hidden = false; $('scanBtn').hidden = true; $('pileBtn').hidden = true;
+  $('reader').hidden = false; $('stopScan').hidden = false; $('scanBtn').hidden = true; $('pileBtn').hidden = true; $('ocrBtn').hidden = true;
   const done = async (text) => {
+    if (ocrActive) return;   // reading the printed ISBN
     if (pile) { pileScan(text); return; }
-    await stopScan();
     const d = digits(text);
+    if (isNewsstandUpc(d)) { newsstand(); return; }   // keep the camera on for the printed line
+    await stopScan();
     if (/^97[89]\d{10}$/.test(d)) lookup(d);
-    else if (isNewsstandUpc(d)) newsstand();
     else status('That barcode is not an ISBN (it should start 978 or 979).');
   };
   try {
@@ -397,7 +442,9 @@ async function stopScan() {
   scanning = false;
   if (scanner) { try { await scanner.stop(); } catch { /* already stopped */ } scanner = null; }
   if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
-  $('reader').hidden = true; $('reader').replaceChildren(); $('stopScan').hidden = true; $('scanBtn').hidden = false; $('pileBtn').hidden = false;
+  ocrActive = false;
+  if (ocrStream) { ocrStream.getTracks().forEach((t) => t.stop()); ocrStream = null; }
+  $('reader').hidden = true; $('reader').replaceChildren(); $('stopScan').hidden = true; $('scanBtn').hidden = false; $('pileBtn').hidden = false; $('ocrBtn').hidden = false;
   if (pile) {
     if (quickOpen) closeQuick(quickIsbn ? 'add' : 'skip');   // stopped with the box open: keep that book
     pile = false; $('pileInfo').hidden = true; $('pileUsing').hidden = true; $('qChange').hidden = true;
@@ -425,6 +472,8 @@ $('isbn').addEventListener('input', () => {
 $('isbn').addEventListener('keydown', (e) => { if (e.key === 'Enter') lookup($('isbn').value); });
 $('scanBtn').addEventListener('click', startScan);
 $('pileBtn').addEventListener('click', startPile);
+$('ocrBtn').addEventListener('click', () => { beep(true); readPrinted('box'); });
+$('qOcr').addEventListener('click', () => readPrinted('quick'));
 $('stopScan').addEventListener('click', stopScan);
 for (const g of ['qFormat', 'qGrade', 'qJacket', 'qPrinting']) {
   $(g).addEventListener('click', (e) => {

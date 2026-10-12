@@ -57,6 +57,9 @@
     <section id="identify" class="card">
       <button id="scanBtn" class="primary big">📷 Scan barcode</button>
       <button id="pileBtn" class="big">📚 Scan a pile</button>
+      <button id="ocrBtn" class="big">🔤 Read the printed ISBN</button>
+      <p class="hint" id="ocrHint">For paperbacks whose barcode isn't the ISBN (the old newsstand price barcode), and books
+        with no barcode: the camera reads the "ISBN …" line printed on the cover.</p>
       <p id="pileInfo" class="hint" hidden>Pile mode: the camera stays open. After each scan a small box asks format, grade and
         jacket, starting on the last book's answers, so a matching pile is one tap each. Tap "Stop camera" when you're done.</p>
       <p id="pileCount" class="status ok" hidden></p>
@@ -67,9 +70,9 @@
       <div id="quick" class="sheet" hidden>
         <div class="qt" id="qTitle"></div>
         <div id="qIsbnRow" hidden>
-          <p class="hint">Newsstand barcode: it holds the price, not the ISBN. Tap the box and choose <b>Scan Text</b>
-            (iPhone) to read the ISBN printed near it, or type it.</p>
-          <input id="qIsbn" inputmode="text" autocomplete="off" placeholder="ISBN printed near the barcode">
+          <p class="hint">Newsstand barcode: it holds the price, not the ISBN. The ISBN is printed near it.</p>
+          <button id="qOcr" class="primary">🔤 Read the printed ISBN</button>
+          <input id="qIsbn" inputmode="text" autocomplete="off" placeholder="or type it here">
         </div>
         <div class="chips" id="qFormat">
           <button data-v="Hardcover">Hardcover</button>
