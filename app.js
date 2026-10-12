@@ -3,7 +3,7 @@
 // the owner's GitHub queue repo with Status "new". The Book Collection desktop program prepares new items (Google
 // lookup, your other copies, genre, eBay value, floors, rarity) and completes them. No keys live in this page.
 import { GRADES, FORMATS, EDITIONS, DETAILS, conditionBuild, quickCondition, takesJacket, buildDraft, isbnValid, suggestedFormat,
-  printingText, digits, isNewsstandUpc, isbnFromPrintedText } from './rules.js';
+  printingText, digits, isNewsstandUpc, isbnFromPrintedText, issueDateFromText } from './rules.js';
 import { lookupIsbn } from './lookup.js';
 import { readPrintedIsbn } from './ocr.js';
 import { GitHub } from './github.js';
@@ -214,14 +214,20 @@ async function readPrinted(target) {
   if (target === 'quick') $('quick').hidden = true;   // the box would cover the camera
   const guide = document.createElement('div'); guide.className = 'ocrband';
   $('reader').append(guide);
+  // While reading for a newsstand barcode in a pile, it may be a magazine (no ISBN at all).
+  let toMagazine = false;
+  const magBtn = Object.assign(document.createElement('button'), { className: 'ocrmag', textContent: "📰 It's a magazine" });
+  magBtn.addEventListener('click', () => { toMagazine = true; ocrActive = false; });
+  if (target === 'quick' && quickNeedsIsbn) $('reader').append(magBtn);
   window.scrollTo({ top: $('reader').offsetTop - 60, behavior: 'smooth' });
   let isbn = null;
   try { isbn = await readPrintedIsbn(video, (t) => status(t), () => !ocrActive); }
   catch (e) { status(e.message); }
-  guide.remove();
+  guide.remove(); magBtn.remove();
   const wasActive = ocrActive; ocrActive = false;
   if (target === 'quick') {
     if (quickOpen) $('quick').hidden = false;
+    if (toMagazine && quickOpen) { magazineMode(true); return; }
     if (isbn) { beep(true); $('qIsbn').value = isbn; $('qIsbn').dispatchEvent(new Event('input')); status(`Read ISBN ${isbn}.`); }
     if (ocrStream) await stopScan();
     return;
@@ -255,6 +261,28 @@ function beep(ok) {
 // book's answers, so a matching pile is one tap per book; with "Ask after every scan" off, every scan gets the last
 // answers until they're changed. Never a guess: nothing is filled unless picked.
 let quickIsbn = '', quickOpen = false, quickNeedsIsbn = false, formatTouched = false;
+let quickMagazine = false, quickUpc = '';
+const lookedUp = {};   // ISBN digits -> { title, author } from the box's look-up: sent with the scan
+
+// Magazines seen on this device, by newsstand barcode (every issue of a magazine carries the same UPC).
+const magazines = () => { try { return JSON.parse(store.get('magazines', '{}')); } catch { return {}; } };
+const upcKey = (u) => { const d = digits(u); return d.length === 13 && d[0] === '0' ? d.slice(1) : d; };
+function rememberMagazine(upc, title) { const m = magazines(); m[upcKey(upc)] = title; store.set('magazines', JSON.stringify(m)); }
+
+/** The details box as a magazine issue: magazine name and cover date instead of the book rows. */
+function magazineMode(on, title = '') {
+  quickMagazine = on;
+  $('qMagRow').hidden = !on; $('qBookRows').hidden = on; $('qBookRows2').hidden = on;
+  if (on) {
+    ocrActive = false;   // stop looking for an ISBN
+    $('qIsbnRow').hidden = true;
+    $('qTitle').textContent = 'Magazine issue';
+    $('qMagTitle').value = title; $('qMagIssue').value = '';
+    $('magTitles').replaceChildren(...[...new Set(Object.values(magazines()))].sort().map((t) => Object.assign(document.createElement('option'), { value: t })));
+    $('qBare').hidden = true;
+    (title ? $('qMagIssue') : $('qMagTitle')).focus();
+  }
+}
 const SIZE_TIP = 'Mass market = pocket size, about 4¼ × 7 in; trade = bigger, usually hardcover size.';
 const PER_BOOK = ['signed', 'firstEdition'];   // never carried to the next book (nor is printing)
 const quickLast = () => { try { return JSON.parse(store.get('quick', '{}')); } catch { return {}; } };
@@ -284,13 +312,17 @@ function showQuickJacket() { const f = picked('qFormat'); $('qJacket').hidden = 
 function openQuick(isbn, needIsbn = false) {
   const q = quickLast();
   quickIsbn = isbn || ''; quickOpen = true; quickNeedsIsbn = needIsbn;
+  if (!needIsbn) quickUpc = '';
+  magazineMode(false);
   $('qIsbnRow').hidden = !needIsbn; $('qIsbn').value = '';
   const scan = !!isbn || needIsbn;
   $('qAdd').textContent = scan ? 'Add' : 'Use these';
   $('qBare').hidden = !scan; $('qSkip').textContent = scan ? 'Not this one' : 'Cancel';
-  pick('qFormat', q.format || ''); pick('qGrade', q.grade || ''); pick('qJacket', q.jacket || '');
+  // A newsstand barcode means a mass market paperback, almost always: start there.
+  pick('qFormat', needIsbn ? 'Mass Market Paperback' : q.format || ''); pick('qGrade', q.grade || ''); pick('qJacket', q.jacket || '');
   for (const b of $('qExtra').children) b.classList.toggle('on', !PER_BOOK.includes(b.dataset.v) && !!q[b.dataset.v]);
-  pick('qPrinting', ''); $('qPrintingOther').value = ''; formatTouched = false; $('qFormatHint').textContent = SIZE_TIP;
+  pick('qPrinting', ''); $('qPrintingOther').value = ''; formatTouched = false;
+  $('qFormatHint').textContent = needIsbn ? 'Newsstand barcode: almost always a mass market paperback.' : SIZE_TIP;
   $('qAsk').checked = quickAsk();
   showQuickJacket();
   $('qTitle').textContent = isbn ? `ISBN ${isbn}` : needIsbn ? 'Newsstand barcode' : 'Details for every scan';
@@ -305,9 +337,10 @@ function showQuickTitle(isbn) {
     .then((r) => r.json()).then((j) => {
       const b = j[`ISBN:${digits(isbn)}`]?.details;
       if (!b || quickIsbn !== isbn) return;
+      lookedUp[digits(isbn)] = { title: b.title || '', author: b.authors?.[0]?.name || '' };
       if (b.title) $('qTitle').textContent = b.title + (b.authors?.[0]?.name ? ` - ${b.authors[0].name}` : '');
       const f = suggestedFormat(b.physical_format);
-      if (!f || formatTouched) return;
+      if (!f || formatTouched || (quickNeedsIsbn && f === 'Paperback')) return;   // the newsstand default stands
       const hint = (t) => { $('qFormatHint').textContent = t; };
       if ([...$('qFormat').children].some((c) => c.dataset.v === f)) { pick('qFormat', f); showQuickJacket(); hint(`Format from the book's record: ${b.physical_format}`); }
       else if (f === 'Paperback') {
@@ -317,7 +350,39 @@ function showQuickTitle(isbn) {
     }).catch(() => {});
 }
 
+/** Adds the magazine issue in the box to the queue (and remembers the magazine for its barcode). */
+function addMagazine() {
+  const title = $('qMagTitle').value.trim();
+  const issue = issueDateFromText($('qMagIssue').value) || $('qMagIssue').value.trim();
+  const grade = picked('qGrade');
+  if (!title) { status('Name the magazine first.'); $('qMagTitle').focus(); return; }
+  const missing = [!issue && 'issue date', !grade && 'grade'].filter(Boolean);
+  if (missing.length && !confirm(`Not chosen: ${missing.join(', ')}.\n\nAdd it anyway and set ${missing.length === 1 ? 'it' : 'them'} when you review it on the PC?`)) return;
+  rememberMagazine(quickUpc, title);
+  if (grade) store.set('quick', JSON.stringify({ ...quickLast(), grade }));
+  const year = (issue.match(/\b(19|20)\d{2}\b/) || [''])[0];
+  const book = { Title: issue ? `${title}, ${issue}` : title, Series: title, Format: 'Magazine', Status: 'Own' };
+  if (issue) book.Edition = issue;
+  if (year) book.Year = year;
+  const cond = quickCondition('Magazine', grade, null, []);
+  if (cond) book.Condition = cond;
+  const sources = Object.fromEntries(Object.keys(book).map((k) => [k, 'owner']));
+  const id = Array.from(crypto.getRandomValues(new Uint8Array(5)), (b) => b.toString(16).padStart(2, '0')).join('');
+  const item = { Id: id, Captured: localStamp(), Device: 'web', Status: 'new', Book: book, Sources: sources,
+    Notes: [`Magazine issue (newsstand barcode ${quickUpc}): research the editor, contents and cover artist (ISFDB indexes science fiction magazines issue by issue).`],
+    Photo: '', ValueBasis: '', ValueWeak: false, BatchId: '' };
+  const s = settings();
+  sendChain = sendChain.then(() => new GitHub(s.owner, s.token).appendLine(s.queue, 'queue.jsonl', JSON.stringify(item), `Queued (web pile): ${book.Title}`))
+    .then(() => { pileSent++; $('pileCount').textContent = `${pileSent} item(s) queued`; })
+    .catch((e) => { beep(false); status(`Couldn't queue ${book.Title}: ${e.message}`); });
+  magazineMode(false); quickOpen = false; quickNeedsIsbn = false; $('quick').hidden = true;
+  pileLast = quickUpc; pileLastAt = Date.now();
+  renderUsing();
+}
+
 function closeQuick(choice) {
+  if (quickMagazine && choice === 'add') { addMagazine(); return; }
+  if (quickMagazine) { magazineMode(false); quickOpen = false; quickNeedsIsbn = false; $('quick').hidden = true; pileLastAt = Date.now(); renderUsing(); return; }
   if (quickNeedsIsbn && choice !== 'skip' && !quickIsbn) {
     status('Scan or type the ISBN printed near the barcode first (or tap Not this one).');
     $('qIsbn').focus();
@@ -361,8 +426,10 @@ function pileScan(text) {
     if (d === pileLast && Date.now() - pileLastAt < 4000) return;
     pileLast = d; pileLastAt = Date.now();
     beep(true);
+    quickUpc = d;
+    const known = magazines()[upcKey(d)];
     openQuick('', true);   // ask for the ISBN printed near the barcode
-    readPrinted('quick');
+    if (known) magazineMode(true, known); else readPrinted('quick');
     return;
   }
   if (!/^97[89]\d{10}$/.test(d)) { beep(false); return; }
@@ -377,6 +444,7 @@ function queuePile(d, q) {
   const s = settings();
   const id = Array.from(crypto.getRandomValues(new Uint8Array(5)), (b) => b.toString(16).padStart(2, '0')).join('');
   const book = { ISBN: d, Status: 'Own' };
+  const rec = lookedUp[digits(d)];   // the box's look-up (the PC checks everything again)
   const condition = quickCondition(q.format || '', q.grade || '', q.jacket || null, q.exLibrary ? ['Ex-library'] : []);
   if (q.format) book.Format = q.format;
   if (condition) book.Condition = condition;
@@ -384,6 +452,8 @@ function queuePile(d, q) {
   if (printingOf(q)) book.Printing = printingOf(q);
   if (q.signed) book.Signed = 'Yes';
   const sources = Object.fromEntries(Object.keys(book).map((k) => [k, 'owner']));
+  if (rec?.title) { book.Title = rec.title; sources.Title = 'record'; }
+  if (rec?.author) { book.Author = rec.author; sources.Author = 'record'; }
   const item = { Id: id, Captured: localStamp(), Device: 'web', Status: 'new', Book: book, Sources: sources,
     Notes: [q.format && condition
       ? `Scanned in a pile with quick details: check ${printingOf(q) ? '' : 'printing, '}edition and condition notes when you review it.`
@@ -500,6 +570,8 @@ $('qAdd').addEventListener('click', () => closeQuick('add'));
 $('qBare').addEventListener('click', () => closeQuick('bare'));
 $('qSkip').addEventListener('click', () => closeQuick('skip'));
 $('qChange').addEventListener('click', () => openQuick(null));
+$('qMag').addEventListener('click', () => magazineMode(true));
+$('qMagIssue').addEventListener('change', () => { const t = issueDateFromText($('qMagIssue').value); if (t) $('qMagIssue').value = t; });
 // The printed ISBN for a newsstand barcode: typed, or inserted by iPhone Scan Text ("ISBN 0-380-71922-3", O for 0...).
 $('qIsbn').addEventListener('input', () => {
   const found = readIsbn($('qIsbn').value);

@@ -49,7 +49,7 @@ export function isbnTo10(s) {
 
 export const GRADES = ['As New', 'Fine', 'Near Fine', 'Very Good', 'Good', 'Fair', 'Poor'];
 export const FORMATS = ['Hardcover', 'Trade Paperback', 'Mass Market Paperback', 'Paperback', 'Leather',
-  'Slipcased Hardcover', 'Boxed Set', 'Library Binding', 'Ledger', 'Other'];
+  'Slipcased Hardcover', 'Boxed Set', 'Library Binding', 'Ledger', 'Magazine', 'Other'];
 export const EDITIONS = ['', 'First Edition', 'First American Edition', 'First UK Edition', 'Book Club Edition',
   'First Edition Thus', 'Reprint', 'Second Edition'];
 export const DETAILS = ['Book club edition', 'Limited edition', 'Proof / advance copy', 'Association copy',
@@ -61,6 +61,26 @@ export function conditionBuild(grade, jacketGrade, djToken, detail) {
   const d = (detail || '').trim().replace(/^[;,]+|[;,]+$/g, '').trim();
   if (djToken) return d ? `${left} | ${djToken}: ${d}` : `${left} | ${djToken}`;
   return d ? `${left} | ${d}` : left;
+}
+
+// ---------- Magazines ----------
+
+const MONTH_NAMES = { jan: 'January', feb: 'February', mar: 'March', apr: 'April', jun: 'June', jul: 'July', aug: 'August',
+  sep: 'September', sept: 'September', oct: 'October', nov: 'November', dec: 'December' };
+const MONTH = 'january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec|winter|spring|summer|fall|autumn';
+const ISSUE_DATE = new RegExp(`\\b(?:(early|mid|late)[\\s-]+)?(${MONTH})\\.?(?:\\s*/\\s*(${MONTH})\\.?)?\\s*,?\\s+((?:19|20)\\d{2})\\b`, 'i');
+
+function monthName(m) {
+  const k = m.toLowerCase();
+  return MONTH_NAMES[k] || k[0].toUpperCase() + k.slice(1);
+}
+
+/** A magazine's issue date from cover text ("MID-DECEMBER 1986 $2.00" -> "Mid-December 1986"); null when none. */
+export function issueDateFromText(text) {
+  const m = String(text || '').match(ISSUE_DATE);
+  if (!m) return null;
+  const pre = m[1] ? m[1][0].toUpperCase() + m[1].slice(1).toLowerCase() + '-' : '';
+  return `${pre}${monthName(m[2])}${m[3] ? '/' + monthName(m[3]) : ''} ${m[4]}`;
 }
 
 // ---------- Newsstand (UPC) barcodes on mass market paperbacks ----------

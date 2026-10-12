@@ -73,17 +73,26 @@
           <p class="hint">Newsstand barcode: it holds the price, not the ISBN. The ISBN is printed near it.</p>
           <button id="qOcr" class="primary">🔤 Read the printed ISBN</button>
           <input id="qIsbn" inputmode="text" autocomplete="off" placeholder="or type it here">
+          <button id="qMag">📰 It's a magazine</button>
         </div>
+        <div id="qMagRow" hidden>
+          <input id="qMagTitle" list="magTitles" autocomplete="off" placeholder="Magazine (e.g. Analog Science Fiction/Science Fact)">
+          <datalist id="magTitles"></datalist>
+          <input id="qMagIssue" autocomplete="off" placeholder="Issue date on the cover (e.g. Mid-December 1986)">
+        </div>
+        <div id="qBookRows">
         <div class="chips" id="qFormat">
           <button data-v="Hardcover">Hardcover</button>
           <button data-v="Trade Paperback">Trade pb</button>
           <button data-v="Mass Market Paperback">Mass market</button>
         </div>
         <p id="qFormatHint" class="hint"></p>
+        </div>
         <div class="chips" id="qGrade">
           <button data-v="Fine">Fine</button><button data-v="Near Fine">Near Fine</button><button data-v="Very Good">Very Good</button>
           <button data-v="Good">Good</button><button data-v="Fair">Fair</button><button data-v="Poor">Poor</button>
         </div>
+        <div id="qBookRows2">
         <div class="chips" id="qJacket">
           <button data-v="hasDJ">Has jacket</button><button data-v="protectedDJ">In protector</button>
           <button data-v="noDJ">Missing</button><button data-v="jacketless">Issued without</button>
@@ -99,6 +108,7 @@
           <button data-v="9">9</button><button data-v="10">10</button><button data-v="0">Later (no number)</button>
         </div>
         <input id="qPrintingOther" inputmode="numeric" placeholder="Higher? Type the lowest number (e.g. 34)" autocomplete="off">
+        </div>
         <label class="check"><input type="checkbox" id="qAsk" checked> Ask after every scan</label>
         <div class="row">
           <button id="qAdd" class="primary" style="flex:1">Add</button>
