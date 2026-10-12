@@ -33,7 +33,8 @@ export class GitHub {
     const r = await this.req('GET', `/repos/${this.owner}/${repo}/contents/${path}`);
     if (!r) return { text: null, sha: null };
     let text;
-    if (r.content) text = new TextDecoder().decode(Uint8Array.from(atob(r.content.replace(/\n/g, '')), (c) => c.charCodeAt(0)));
+    if (r.size === 0) text = '';   // an empty file has no inline content either
+    else if (r.content) text = new TextDecoder().decode(Uint8Array.from(atob(r.content.replace(/\n/g, '')), (c) => c.charCodeAt(0)));
     else text = await (await fetch(r.download_url, { headers: { Authorization: `Bearer ${this.token}` } })).text();   // over 1 MB
     return { text, sha: r.sha };
   }
