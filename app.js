@@ -332,6 +332,17 @@ function closeQuick(choice) {
   if (wasNewsstand) pileLastAt = Date.now();   // same for its newsstand barcode
   if (choice === 'skip') { renderUsing(); return; }
   let q = {};
+  if (choice === 'add' && isbn) {
+    // Add with something not chosen: say what, and let the owner add anyway (set it at review) or go back.
+    const missing = [!picked('qFormat') && 'format', !picked('qGrade') && 'grade',
+      !$('qJacket').hidden && !picked('qJacket') && 'jacket'].filter(Boolean);
+    if (missing.length && !confirm(`Not chosen: ${missing.join(', ')}.
+
+Add it anyway and set ${missing.length === 1 ? 'it' : 'them'} when you review the book on the PC?`)) {
+      quickIsbn = isbn; quickOpen = true; quickNeedsIsbn = wasNewsstand; $('quick').hidden = false;   // go back
+      return;
+    }
+  }
   if (choice === 'add') {
     q = { format: picked('qFormat'), grade: picked('qGrade'), jacket: $('qJacket').hidden ? '' : picked('qJacket') };
     for (const b of $('qExtra').children) q[b.dataset.v] = b.classList.contains('on');
