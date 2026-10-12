@@ -66,6 +66,11 @@
       <!-- Quick details between pile scans -->
       <div id="quick" class="sheet" hidden>
         <div class="qt" id="qTitle"></div>
+        <div id="qIsbnRow" hidden>
+          <p class="hint">Newsstand barcode: it holds the price, not the ISBN. Tap the box and choose <b>Scan Text</b>
+            (iPhone) to read the ISBN printed near it, or type it.</p>
+          <input id="qIsbn" inputmode="text" autocomplete="off" placeholder="ISBN printed near the barcode">
+        </div>
         <div class="chips" id="qFormat">
           <button data-v="Hardcover">Hardcover</button>
           <button data-v="Trade Paperback">Trade pb</button>

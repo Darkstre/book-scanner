@@ -63,6 +63,73 @@ export function conditionBuild(grade, jacketGrade, djToken, detail) {
   return d ? `${left} | ${d}` : left;
 }
 
+// ---------- Newsstand (UPC) barcodes on mass market paperbacks ----------
+// From the 1970s to 2007 mass market paperbacks carried a UPC (company + price) with a 5-digit add-on instead of the
+// ISBN barcode; the ISBN is printed as text near it. The add-on is digits 5-9 of the ISBN, and the UPC company code
+// stands for the ISBN's first 4 digits, so UPC + add-on gives the ISBN once that publisher is known.
+
+/** A newsstand UPC (12 digits, or 13 starting with 0), not an ISBN barcode. */
+export function isNewsstandUpc(code) {
+  const d = String(code || '').replace(/\D/g, '');
+  return d.length === 12 || (d.length === 13 && d[0] === '0');
+}
+
+/** ISBN-10 from a newsstand UPC + its 5-digit add-on, using known publishers ({ '071001': '0380' }); null when unknown. */
+export function isbnFromUpc(upc, addon, prefixes) {
+  let d = String(upc || '').replace(/\D/g, '');
+  const a = String(addon || '').replace(/\D/g, '');
+  if (d.length === 13 && d[0] === '0') d = d.slice(1);
+  if (d.length !== 12 || a.length !== 5) return null;
+  const p = prefixes[d.slice(0, 6)];
+  if (!p || !/^\d{4}$/.test(p)) return null;
+  const core = p + a;
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += +core[i] * (10 - i);
+  const check = (11 - (sum % 11)) % 11;
+  return core + (check === 10 ? 'X' : String(check));
+}
+
+// Characters text recognition confuses with digits in the ISBN typeface.
+const OCR_DIGIT = { O: '0', o: '0', D: '0', Q: '0', I: '1', l: '1', '|': '1', i: '1', Z: '2', z: '2', S: '5', s: '5', B: '8', G: '6' };
+const OCR_RUN = /[0-9OoDQIl|iZzSsBGXx](?:[0-9OoDQIl|iZzSsBGXx]|[\s-](?=[0-9OoDQIl|iZzSsBGXx])){8,22}/;
+
+function isbnInRun(run) {
+  // Walk the run, mapping look-alike letters to digits; stop at the first length that passes its check digit.
+  let digitsSoFar = '', out = '', best = null;
+  for (const ch of run) {
+    if (ch === '-' || /\s/.test(ch)) { if (digitsSoFar) out += '-'; continue; }
+    const n = digitsSoFar.length;
+    const c = /[Xx]/.test(ch) ? (n === 9 ? 'X' : null) : /\d/.test(ch) ? ch : OCR_DIGIT[ch];
+    if (!c) break;
+    digitsSoFar += c; out += c;
+    if (digitsSoFar.length === 10 && isbnValid(digitsSoFar)) best = out;
+    if (digitsSoFar.length === 13 && isbnValid(digitsSoFar)) return out;
+    if (digitsSoFar.length > 13) break;
+  }
+  return best;
+}
+
+/**
+ * The ISBN printed on a cover or copyright page, from recognized text ("ISBN 0-380-71922-3"; text recognition may
+ * read 0 as O, 1 as I or l, 5 as S, 8 as B). Labelled numbers first; unlabelled only in hyphenated or 978/979 form.
+ * The check digit must pass, so a misread number is never returned. Null when none.
+ */
+export function isbnFromPrintedText(text) {
+  const t = String(text || '');
+  const tidy = (s) => s.replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').toUpperCase();
+  for (const m of t.matchAll(/[I1l|][S5][B8]N/gi)) {
+    const after = t.slice(m.index + m[0].length).replace(/^[\s:.\-]*(?:1[03]\s*[:.]\s*)?/, '');
+    const run = after.match(OCR_RUN);
+    const found = run && run.index === 0 ? isbnInRun(run[0]) : null;
+    if (found) return tidy(found);
+  }
+  for (const m of t.matchAll(/(?<![\dX])(?:97[89][\s-]?\d[\d\s-]{8,14}\d|\d{1,5}-\d{1,7}-\d{1,7}-[\dX])(?![\dX])/gi)) {
+    const found = isbnInRun(m[0]);
+    if (found) return tidy(found);
+  }
+  return null;
+}
+
 /** Formats that take a dust jacket (hardcovers; not slipcased, leather, boxed or paperback). */
 export function takesJacket(format) {
   const f = (format || '').toLowerCase();

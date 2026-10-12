@@ -3,7 +3,7 @@
 // the owner's GitHub queue repo with Status "new". The Book Collection desktop program prepares new items (Google
 // lookup, your other copies, genre, eBay value, floors, rarity) and completes them. No keys live in this page.
 import { GRADES, FORMATS, EDITIONS, DETAILS, conditionBuild, quickCondition, takesJacket, buildDraft, isbnValid, suggestedFormat,
-  printingText, digits } from './rules.js';
+  printingText, digits, isNewsstandUpc, isbnFromPrintedText } from './rules.js';
 import { lookupIsbn } from './lookup.js';
 import { GitHub } from './github.js';
 
@@ -172,6 +172,21 @@ function reset(keepStatus = false) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+/** An ISBN from typed or Scan Text input; null unless the check digit passes. */
+function readIsbn(v) {
+  const d = digits(v);
+  if ((d.length === 10 || d.length === 13) && isbnValid(d) && !/[A-WYZa-wyz]/.test(v)) return v.trim().toUpperCase();
+  return isbnFromPrintedText(/isbn/i.test(v) ? v : 'ISBN ' + v);
+}
+
+/** A newsstand barcode was scanned (single scan): explain, and get the box ready for Scan Text or typing. */
+function newsstand() {
+  status("Newsstand barcode (mass market paperback): it holds the price, not the ISBN. The ISBN is printed near it - tap the ISBN box and choose Scan Text (iPhone), or type it.");
+  $('isbn').value = '';
+  $('isbn').inputMode = 'text';   // the full keyboard, where iPhone offers Scan Text
+  $('isbn').focus();
+}
+
 // ---------- barcode ----------
 
 let scanner = null, stream = null, scanning = false;
@@ -196,7 +211,7 @@ function beep(ok) {
 // Quick details between scans: format, grade, jacket (+ book club / ex-library / signed). The box starts on the last
 // book's answers, so a matching pile is one tap per book; with "Ask after every scan" off, every scan gets the last
 // answers until they're changed. Never a guess: nothing is filled unless picked.
-let quickIsbn = '', quickOpen = false, formatTouched = false;
+let quickIsbn = '', quickOpen = false, quickNeedsIsbn = false, formatTouched = false;
 const SIZE_TIP = 'Mass market = pocket size, about 4¼ × 7 in; trade = bigger, usually hardcover size.';
 const PER_BOOK = ['signed', 'firstEdition'];   // never carried to the next book (nor is printing)
 const quickLast = () => { try { return JSON.parse(store.get('quick', '{}')); } catch { return {}; } };
@@ -222,24 +237,30 @@ function pick(groupId, value) { [...$(groupId).children].forEach((b) => b.classL
 function picked(groupId) { return [...$(groupId).children].find((b) => b.classList.contains('on'))?.dataset.v || ''; }
 function showQuickJacket() { const f = picked('qFormat'); $('qJacket').hidden = !!f && !takesJacket(f); }
 
-/** isbn = null: just change the details used for every scan. */
-function openQuick(isbn) {
+/** isbn = null: just change the details used for every scan. needIsbn: a newsstand barcode; ask for the printed ISBN. */
+function openQuick(isbn, needIsbn = false) {
   const q = quickLast();
-  quickIsbn = isbn || ''; quickOpen = true;
-  $('qAdd').textContent = isbn ? 'Add' : 'Use these';
-  $('qBare').hidden = !isbn; $('qSkip').textContent = isbn ? 'Not this one' : 'Cancel';
+  quickIsbn = isbn || ''; quickOpen = true; quickNeedsIsbn = needIsbn;
+  $('qIsbnRow').hidden = !needIsbn; $('qIsbn').value = '';
+  const scan = !!isbn || needIsbn;
+  $('qAdd').textContent = scan ? 'Add' : 'Use these';
+  $('qBare').hidden = !scan; $('qSkip').textContent = scan ? 'Not this one' : 'Cancel';
   pick('qFormat', q.format || ''); pick('qGrade', q.grade || ''); pick('qJacket', q.jacket || '');
   for (const b of $('qExtra').children) b.classList.toggle('on', !PER_BOOK.includes(b.dataset.v) && !!q[b.dataset.v]);
   pick('qPrinting', ''); $('qPrintingOther').value = ''; formatTouched = false; $('qFormatHint').textContent = SIZE_TIP;
   $('qAsk').checked = quickAsk();
   showQuickJacket();
-  $('qTitle').textContent = isbn ? `ISBN ${isbn}` : 'Details for every scan';
+  $('qTitle').textContent = isbn ? `ISBN ${isbn}` : needIsbn ? 'Newsstand barcode' : 'Details for every scan';
   $('quick').hidden = false;
-  if (!isbn) return;
+  if (isbn) showQuickTitle(isbn);
+}
+
+/** Title - author and the recorded binding for the box (Open Library). */
+function showQuickTitle(isbn) {
   // Which book it is (quick Open Library look-up), so a mis-scan is easy to spot; and its binding when recorded.
-  fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&jscmd=details&format=json`, { signal: AbortSignal.timeout?.(4000) })
+  fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${digits(isbn)}&jscmd=details&format=json`, { signal: AbortSignal.timeout?.(4000) })
     .then((r) => r.json()).then((j) => {
-      const b = j[`ISBN:${isbn}`]?.details;
+      const b = j[`ISBN:${digits(isbn)}`]?.details;
       if (!b || quickIsbn !== isbn) return;
       if (b.title) $('qTitle').textContent = b.title + (b.authors?.[0]?.name ? ` - ${b.authors[0].name}` : '');
       const f = suggestedFormat(b.physical_format);
@@ -254,11 +275,18 @@ function openQuick(isbn) {
 }
 
 function closeQuick(choice) {
-  const isbn = quickIsbn; quickIsbn = ''; quickOpen = false;
+  if (quickNeedsIsbn && choice !== 'skip' && !quickIsbn) {
+    status('Scan or type the ISBN printed near the barcode first (or tap Not this one).');
+    $('qIsbn').focus();
+    return;
+  }
+  const wasNewsstand = quickNeedsIsbn;
+  const isbn = quickIsbn; quickIsbn = ''; quickOpen = false; quickNeedsIsbn = false;
   $('quick').hidden = true;
   if (!isbn && choice === 'skip') { renderUsing(); return; }   // cancelled the change
   store.set('quickAsk', $('qAsk').checked ? '1' : '0');
-  if (isbn) { pileLast = isbn; pileLastAt = Date.now(); }   // the camera is still on this book: ignore it for a moment
+  if (isbn && !wasNewsstand) { pileLast = isbn; pileLastAt = Date.now(); }   // the camera is still on this book: ignore it for a moment
+  if (wasNewsstand) pileLastAt = Date.now();   // same for its newsstand barcode
   if (choice === 'skip') { renderUsing(); return; }
   let q = {};
   if (choice === 'add') {
@@ -275,6 +303,13 @@ function closeQuick(choice) {
 function pileScan(text) {
   if (quickOpen) return;   // the details box is open
   const d = digits(text);
+  if (isNewsstandUpc(d)) {
+    if (d === pileLast && Date.now() - pileLastAt < 4000) return;
+    pileLast = d; pileLastAt = Date.now();
+    beep(true);
+    openQuick('', true);   // ask for the ISBN printed near the barcode
+    return;
+  }
   if (!/^97[89]\d{10}$/.test(d)) { beep(false); return; }
   const now = Date.now();
   if (d === pileLast && now - pileLastAt < 4000) return;   // still pointing at the same book
@@ -321,7 +356,9 @@ async function startScan() {
     if (pile) { pileScan(text); return; }
     await stopScan();
     const d = digits(text);
-    if (/^97[89]\d{10}$/.test(d)) lookup(d); else status('That barcode is not an ISBN (it should start 978 or 979).');
+    if (/^97[89]\d{10}$/.test(d)) lookup(d);
+    else if (isNewsstandUpc(d)) newsstand();
+    else status('That barcode is not an ISBN (it should start 978 or 979).');
   };
   try {
     if ('BarcodeDetector' in window && (await BarcodeDetector.getSupportedFormats()).includes('ean_13')) {
@@ -330,12 +367,13 @@ async function startScan() {
       $('reader').replaceChildren(video);
       stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
       video.srcObject = stream; await video.play();
-      const det = new BarcodeDetector({ formats: ['ean_13'] });
+      const formats = (await BarcodeDetector.getSupportedFormats()).filter((f) => ['ean_13', 'upc_a', 'upc_e'].includes(f));
+      const det = new BarcodeDetector({ formats });
       scanning = true;
       const tick = async () => {
         if (!scanning) return;
         const codes = await det.detect(video).catch(() => []);
-        const hit = codes.find((c) => /^97[89]/.test(c.rawValue));
+        const hit = codes.find((c) => /^97[89]/.test(c.rawValue)) || codes.find((c) => isNewsstandUpc(c.rawValue));
         if (hit) await done(hit.rawValue);
         if (scanning) requestAnimationFrame(tick);
       };
@@ -343,9 +381,10 @@ async function startScan() {
     } else {
       // iPhone Safari: the html5-qrcode library.
       if (!window.Html5Qrcode) throw new Error('The barcode reader did not load - check the connection, or type the ISBN.');
-      scanner = new Html5Qrcode('reader', { formatsToSupport: [Html5QrcodeSupportedFormats.EAN_13], verbose: false });
+      scanner = new Html5Qrcode('reader', { formatsToSupport: [Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E], verbose: false });
       await scanner.start({ facingMode: 'environment' }, { fps: 12, qrbox: (w, h) => ({ width: Math.min(w * 0.9, 340), height: Math.min(h * 0.45, 160) }) },
-        (text) => { if (/^97[89]/.test(text)) done(text); }, () => {});
+        (text) => { if (/^97[89]/.test(text) || isNewsstandUpc(text)) done(text); }, () => {});
     }
     status('Point the camera at the barcode on the back cover.');
   } catch (e) {
@@ -375,7 +414,14 @@ chipGroup('jacket', (v) => { state.jacket = v; });
 chipGroup('flags', (v, on) => { if (on) state.flags.add(v); else state.flags.delete(v); }, true);
 for (const id of ['format', 'jacketGrade', 'printing', 'edition', 'signed']) $(id).addEventListener('change', update);
 for (const id of ['notes', 'hTitle', 'hAuthor', 'isbn']) $(id).addEventListener('input', update);
-$('lookupBtn').addEventListener('click', () => lookup($('isbn').value));
+$('lookupBtn').addEventListener('click', () => lookup(readIsbn($('isbn').value) || $('isbn').value));
+// iPhone Scan Text inserts the printed line ("ISBN 0-812-54600-8"): tidy it and look it up.
+$('isbn').addEventListener('input', () => {
+  const v = $('isbn').value;
+  if (!/[A-Za-z]/.test(v)) return;   // plain typing: wait for Look up / Enter
+  const found = readIsbn(v);
+  if (found) { $('isbn').value = found; $('isbn').inputMode = 'numeric'; lookup(found); }
+});
 $('isbn').addEventListener('keydown', (e) => { if (e.key === 'Enter') lookup($('isbn').value); });
 $('scanBtn').addEventListener('click', startScan);
 $('pileBtn').addEventListener('click', startPile);
@@ -394,6 +440,13 @@ $('qAdd').addEventListener('click', () => closeQuick('add'));
 $('qBare').addEventListener('click', () => closeQuick('bare'));
 $('qSkip').addEventListener('click', () => closeQuick('skip'));
 $('qChange').addEventListener('click', () => openQuick(null));
+// The printed ISBN for a newsstand barcode: typed, or inserted by iPhone Scan Text ("ISBN 0-380-71922-3", O for 0...).
+$('qIsbn').addEventListener('input', () => {
+  const found = readIsbn($('qIsbn').value);
+  quickIsbn = found || '';
+  $('qTitle').textContent = found ? `ISBN ${found}` : 'Newsstand barcode';
+  if (found) { $('qIsbn').value = found; showQuickTitle(found); }
+});
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && quickOpen) closeQuick('skip'); });   // Esc = Not this one / Cancel
 $('photo').addEventListener('change', async () => {
   const f = $('photo').files[0]; if (!f) return;
