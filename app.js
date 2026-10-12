@@ -2,7 +2,7 @@
 // add what only the owner can see (format, grade, jacket, printing, edition, photo), and append it to queue.jsonl in
 // the owner's GitHub queue repo with Status "new". The Book Collection desktop program prepares new items (Google
 // lookup, your other copies, genre, eBay value, floors, rarity) and completes them. No keys live in this page.
-import { GRADES, FORMATS, EDITIONS, DETAILS, conditionBuild, quickCondition, takesJacket, buildDraft, isbnValid, suggestedFormat,
+import { GRADES, FORMATS, EDITIONS, DETAILS, conditionBuild, quickCondition, takesJacket, buildDraft, isbnValid, isbnTo13, suggestedFormat,
   printingText, digits, isNewsstandUpc, isbnFromPrintedText, issueDateFromText } from './rules.js';
 import { lookupIsbn } from './lookup.js';
 import { readPrintedIsbn } from './ocr.js';
@@ -434,13 +434,22 @@ function pileScan(text) {
   }
   if (!/^97[89]\d{10}$/.test(d)) { beep(false); return; }
   const now = Date.now();
-  if (d === pileLast && now - pileLastAt < 4000) return;   // still pointing at the same book
+  if (d === pileLast && now - pileLastAt < 3000) return;   // still pointing at the same book
   pileLast = d; pileLastAt = now;
+  if (d === lastAdded) {   // the same book twice in a row: usually a re-scan, sometimes a second copy
+    beep(false);
+    const again = confirm(`Same book as the last scan (ISBN ${d}).\n\nAdd another copy?`);
+    pileLastAt = Date.now();
+    if (!again) return;
+  }
   beep(true);
   if (quickAsk()) openQuick(d); else queuePile(d, quickLast());
 }
 
+let lastAdded = '';   // the last book added (ISBN-13 digits)
+
 function queuePile(d, q) {
+  lastAdded = digits(d).length === 13 ? digits(d) : (isbnTo13(d) || digits(d));
   const s = settings();
   const id = Array.from(crypto.getRandomValues(new Uint8Array(5)), (b) => b.toString(16).padStart(2, '0')).join('');
   const book = { ISBN: d, Status: 'Own' };
